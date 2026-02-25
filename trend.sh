@@ -17,14 +17,12 @@ MONTH_DIR="$HOME/workspace/github-daily-trends/$MONTH"
 # 创建月份目录
 mkdir -p "$MONTH_DIR"
 
-# 抓取 GitHub Trending 页面
-TRENDING_HTML=$(curl -sL "https://github.com/trending" \
+# 抓取 GitHub Trending 页面到临时文件
+curl -sL "https://github.com/trending" \
     -H "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36" \
-    -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8" \
+    -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" \
     -H "Accept-Language: en-US,en;q=0.5" \
-    -H "Accept-Encoding: gzip, deflate, br" \
-    -H "Connection: keep-alive" \
-    --compressed 2>/dev/null)
+    --compressed 2>/dev/null > /tmp/trending_raw.html
 
 # 生成Markdown报告
 cat > "$MONTH_DIR/$TODAY.md" << EOF
@@ -36,64 +34,93 @@ cat > "$MONTH_DIR/$TODAY.md" << EOF
 
 EOF
 
-# 提取仓库信息并处理
-# 使用 pattern 匹配 article 中的仓库链接
-echo "$TRENDING_HTML" | awk '
-BEGIN { RS="<article"; FS="</article>" }
-NR > 1 {
-    article = $1
-    
-    # 提取仓库名
-    if (match(article, /href="\/([^"]+)"[^}]*class="Link"/, arr)) {
-        repo = arr[1]
-        
-        # 跳过非仓库链接
-        if (repo ~ /^\// || repo ~ /^(sponsors|topics|explore|collections|events)\//) next
-        
-        # 提取描述
-        desc = ""
-        if (match(article, /<p[^}]*class="col[^"]*"[^}]*>([^}]*)<\/p>/, darr)) {
-            desc = darr[1]
-            # 清理 HTML 标签
-            gsub(/<[^}>]+>/, "", desc)
-            gsub(/^[ \t]+|[ \t]+$/, "", desc)
-        }
-        
-        # 提取语言
-        lang = ""
-        if (match(article, /programmingLanguage":"([^"]+)"/, larr)) {
-            lang = larr[1]
-        }
-        
-        # 提取今日 star 数
-        stars_today = ""
-        if (match(article, /(\d+) stars today/, sarr)) {
-            stars_today = sarr[1]
-        }
-        
-        # 输出
-        if (length(repo) > 0 && repo ~ /\//) {
-            print "### [" repo "](https://github.com/" repo ")"
-            if (length(lang) > 0) print "「" lang "」"
-            if (length(stars_today) > 0) print "⭐ +" stars_today " today"
-            print ""
-            if (length(desc) > 0) print desc
-            print ""
-        }
-    }
-}
-' >> "$MONTH_DIR/$TODAY.md" 2>>/tmp/awk_error.log
+# 解析仓库信息
+python3 << 'PYEOF'
+import re
 
-# 备用方案：如果 awk 没输出，用简单 grep
+with open('/tmp/trending_raw.html', 'r', encoding='utf-8') as f:
+    html = f.read()
+
+# 匹配每个 article 块
+pattern = r'<article[^}]*class="Box-row"(.*?)</article>'
+articles = re.findall(pattern, html, re.DOTALL)
+
+repos = []
+for article in articles:
+    # 提取仓库名
+    repo_match = re.search(r'href="/([^/]+/[^"]+)"[^}]*class="Link"', article)
+    if not repo_match:
+        continue
+    repo = repo_match.group(1)
+    
+    # 跳过非仓库链接
+    if any(x in repo for x in ['login', 'sponsors/', 'topics/', 'explore/', 'collections/', 'events/']):
+        continue
+    
+    # 提取描述
+    desc_match = re.search(r'<p[^}]*class="col[^"]*color-fg-muted[^"]*"[^}]*>(.*?)\s*</p>', article, re.DOTALL)
+    desc = ''
+    if desc_match:
+        desc = re.sub(r'<[^}>]+>', '', desc_match.group(1))
+        desc = desc.strip()
+    
+    # 提取语言
+    lang_match = re.search(r'"programmingLanguage":"([^"]+)"', article)
+    lang = lang_match.group(1) if lang_match else ''
+    
+    # 提取今日 star 数
+    stars_match = re.search(r'(\d+)\s+stars?\s+today', article, re.IGNORECASE)
+    stars_today = stars_match.group(1) if stars_match else ''
+    
+    repos.append({
+        'name': repo,
+        'desc': desc,
+        'lang': lang,
+        'stars_today': stars_today
+    })
+
+# 去重
+seen = set()
+unique_repos = []
+for r in repos:
+    if r['name'] not in seen:
+        seen.add(r['name'])
+        unique_repos.append(r)
+
+# 输出
+for i, r in enumerate(unique_repos[:25], 1):
+    print(f"### {i}. [{r['name']}](https://github.com/{r['name']})")
+    
+    info_parts = []
+    if r['lang']:
+        info_parts.append(f"📝 {r['lang']}")
+    if r['stars_today']:
+        info_parts.append(f"⭐ +{r['stars_today']} today")
+    
+    if info_parts:
+        print(f"\n{' | '.join(info_parts)}")
+    
+    if r['desc']:
+        print(f"\n{r['desc']}")
+    
+    print()
+
+PYEOF
+>> "$MONTH_DIR/$TODAY.md" 2>>/tmp/python_error.log
+
+# 如果没有数据，使用备用方案
 if [ ! -s "$MONTH_DIR/$TODAY.md" ] || [ $(wc -l < "$MONTH_DIR/$TODAY.md") -lt 5 ]; then
     echo "" >> "$MONTH_DIR/$TODAY.md"
-    echo "## 📊 Trending Repositories (Simple List)" >> "$MONTH_DIR/$TODAY.md"
+    echo "## 📊 Trending Repositories (Backup List)" >> "$MONTH_DIR/$TODAY.md"
     echo "" >> "$MONTH_DIR/$TODAY.md"
     
-    echo "$TRENDING_HTML" | grep -oE 'href="/[^/]+/[^"]+" data-view-component="true" class="Link"' | \
-        grep -vE 'login|sponsors|explore|topics|trending|collections|events' | \
-        sed 's/href="\//https:\/\/github.com\//;s/" data-view-component.*//' | \
-        sed 's/.*/- [&](&)/' | head -25 >> "$MONTH_DIR/$TODAY.md"
+    grep -oE 'href="/[^/]+/[^"]+" data-view-component="true" class="Link"' /tmp/trending_raw.html | \
+        sed 's/href="//;s/" data-view-component.*$//' | \
+        grep -vE '^/(login|sponsors|topics|explore|collections|events)' | \
+        awk '!seen[$0]++' | \
+        while read repo; do
+            echo "- [$repo](https://github.com$repo)"
+        done | head -25 >> "$MONTH_DIR/$TODAY.md"
 fi
 
 echo "" >> "$MONTH_DIR/$TODAY.md"
@@ -107,4 +134,4 @@ git commit -m "Add GitHub trends $TODAY" --allow-empty
 git push
 
 # 清理
-rm -f /tmp/awk_error.log
+rm -f /tmp/trending_raw.html /tmp/python_error.log
