@@ -19,7 +19,7 @@ mkdir -p "$MONTH_DIR"
 
 # 获取GitHub趋势 - 最近一周获得star最多的仓库
 # 使用 pushed:> 查询最近有更新的热门仓库
-gh api "search/repositories?q=pushed:%3E$(date -v-7d +%Y-%m-%d)&sort=stars&order=desc&per_page=15" --jq '.items | map({name: .full_name, description: .description, stars: .stargazers_count, language: .language, url: .html_url})' > /tmp/trends_$TODAY.json 2>/tmp/gh_error.log
+gh api "search/repositories?q=pushed:%3E$(date -v-3d +%Y-%m-%d)&sort=stars&order=desc&per_page=15" --jq '.items | map({name: .full_name, description: .description, stars: .stargazers_count, language: .language, url: .html_url})' > /tmp/trends_$TODAY.json 2>/tmp/gh_error.log
 
 # 生成Markdown报告
 cat > "$MONTH_DIR/$TODAY.md" << EOF
