@@ -17,11 +17,11 @@ MONTH_DIR="$HOME/workspace/github-daily-trends/$MONTH"
 # 创建月份目录
 mkdir -p "$MONTH_DIR"
 
-# 获取GitHub趋势（最近一天创建，按stars排序）
-YESTERDAY=$(date -v-1d +%Y-%m-%d)
-gh api "search/repositories?q=created:%3E$YESTERDAY&sort=stars&order=desc&per_page=10" --jq '.items | map({name: .full_name, description: .description, stars: .stargazers_count, language: .language, url: .html_url})' > /tmp/trends_$TODAY.json 2>/tmp/gh_error.log
+# 获取GitHub趋势 - 最近一周获得star最多的仓库
+# 使用 pushed:> 查询最近有更新的热门仓库
+gh api "search/repositories?q=pushed:%3E$(date -v-7d +%Y-%m-%d)&sort=stars&order=desc&per_page=15" --jq '.items | map({name: .full_name, description: .description, stars: .stargazers_count, language: .language, url: .html_url})' > /tmp/trends_$TODAY.json 2>/tmp/gh_error.log
 
-# 生成Markdown报告 - 使用双引号heredoc来允许变量替换
+# 生成Markdown报告
 cat > "$MONTH_DIR/$TODAY.md" << EOF
 # GitHub Daily Trends - $TODAY
 
@@ -34,16 +34,20 @@ EOF
 # 解析JSON并添加到报告
 if [ -s /tmp/trends_$TODAY.json ]; then
     echo "" >> "$MONTH_DIR/$TODAY.md"
-    # 使用简单的jq语法，确保兼容
-    jq -r '.[] | "- [" + .name + "](" + .url + ") ⭐ " + (.stars | tostring) + " - " + (.description // "无描述")' /tmp/trends_$TODAY.json >> "$MONTH_DIR/$TODAY.md" 2>>/tmp/jq_error.log || echo "jq解析出错" >> "$MONTH_DIR/$TODAY.md"
+    # 格式化输出每个仓库
+    jq -r '.[] | "### [" + .name + "](" + .url + ")\n⭐ " + (.stars | tostring) + " stars | " + (.language // "未知") + "\n\n" + (.description // "暂无描述") + "\n"' /tmp/trends_$TODAY.json >> "$MONTH_DIR/$TODAY.md" 2>>/tmp/jq_error.log || echo "jq解析出错" >> "$MONTH_DIR/$TODAY.md"
     echo "" >> "$MONTH_DIR/$TODAY.md"
-    echo "生成完成 ✅" >> "$MONTH_DIR/$TODAY.md"
+    echo "---" >> "$MONTH_DIR/$TODAY.md"
+    echo "" >> "$MONTH_DIR/$TODAY.md"
+    echo "✅ 生成于 $(date '+%Y-%m-%d %H:%M:%S')" >> "$MONTH_DIR/$TODAY.md"
 else
     echo "" >> "$MONTH_DIR/$TODAY.md"
     echo "⚠️ 获取趋势数据失败或数据为空" >> "$MONTH_DIR/$TODAY.md"
     echo "" >> "$MONTH_DIR/$TODAY.md"
-    echo "错误日志：" >> "$MONTH_DIR/$TODAY.md"
-    cat /tmp/gh_error.log >> "$MONTH_DIR/$TODAY.md" 2>/dev/null || true
+    echo "**错误日志：**" >> "$MONTH_DIR/$TODAY.md"
+    echo "\`\`\`" >> "$MONTH_DIR/$TODAY.md"
+    cat /tmp/gh_error.log >> "$MONTH_DIR/$TODAY.md" 2>/dev/null || echo "无错误日志" >> "$MONTH_DIR/$TODAY.md"
+    echo "\`\`\`" >> "$MONTH_DIR/$TODAY.md"
 fi
 
 # Git提交和推送
