@@ -34,21 +34,21 @@ cat > "$MONTH_DIR/$TODAY.md" << EOF
 
 EOF
 
-# 解析仓库信息
-python3 << 'PYEOF'
+# 解析仓库信息并追加到文件
+python3 << 'PYEOF' >> "$MONTH_DIR/$TODAY.md" 2>>/tmp/python_error.log
 import re
 
 with open('/tmp/trending_raw.html', 'r', encoding='utf-8') as f:
     html = f.read()
 
 # 匹配每个 article 块
-pattern = r'<article[^}]*class="Box-row"(.*?)</article>'
+pattern = r'<article[^>]*class="Box-row"(.*?)</article>'
 articles = re.findall(pattern, html, re.DOTALL)
 
 repos = []
 for article in articles:
     # 提取仓库名
-    repo_match = re.search(r'href="/([^/]+/[^"]+)"[^}]*class="Link"', article)
+    repo_match = re.search(r'href="/([^/]+/[^"]+)"[^>]*class="Link"', article)
     if not repo_match:
         continue
     repo = repo_match.group(1)
@@ -58,10 +58,10 @@ for article in articles:
         continue
     
     # 提取描述
-    desc_match = re.search(r'<p[^}]*class="col[^"]*color-fg-muted[^"]*"[^}]*>(.*?)\s*</p>', article, re.DOTALL)
+    desc_match = re.search(r'<p[^>]*class="col[^"]*color-fg-muted[^"]*"[^>]*>(.*?)\s*</p>', article, re.DOTALL)
     desc = ''
     if desc_match:
-        desc = re.sub(r'<[^}>]+>', '', desc_match.group(1))
+        desc = re.sub(r'<[^>]+>', '', desc_match.group(1))
         desc = desc.strip()
     
     # 提取语言
@@ -106,10 +106,10 @@ for i, r in enumerate(unique_repos[:25], 1):
     print()
 
 PYEOF
->> "$MONTH_DIR/$TODAY.md" 2>>/tmp/python_error.log
 
-# 如果没有数据，使用备用方案
-if [ ! -s "$MONTH_DIR/$TODAY.md" ] || [ $(wc -l < "$MONTH_DIR/$TODAY.md") -lt 5 ]; then
+# 检查是否有内容，如果没有使用备用方案
+LINE_COUNT=$(wc -l < "$MONTH_DIR/$TODAY.md")
+if [ "$LINE_COUNT" -lt 10 ]; then
     echo "" >> "$MONTH_DIR/$TODAY.md"
     echo "## 📊 Trending Repositories (Backup List)" >> "$MONTH_DIR/$TODAY.md"
     echo "" >> "$MONTH_DIR/$TODAY.md"
