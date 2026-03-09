@@ -6,13 +6,16 @@
 # 加载环境变量
 source "$HOME/.local/bin/env"
 
+# 基于脚本位置定位仓库，避免目录迁移后路径失效
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # 进入工作目录
-cd "$HOME/workspace/github-daily-trends" || exit 1
+cd "$SCRIPT_DIR" || exit 1
 
 # 获取今天的日期
 TODAY=$(date +%Y-%m-%d)
 MONTH=$(date +%Y-%m)
-MONTH_DIR="$HOME/workspace/github-daily-trends/$MONTH"
+MONTH_DIR="$SCRIPT_DIR/$MONTH"
 
 # 创建月份目录
 mkdir -p "$MONTH_DIR"
